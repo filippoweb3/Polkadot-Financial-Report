@@ -1,0 +1,737 @@
+---
+title: "Polkadot Financial Report"
+author: "Filippo Franchini"
+date: "Last update: `r Sys.Date()`"
+
+output: 
+  pdf_document:
+    number_sections: yes
+    keep_tex: true
+    extra_dependencies: ["float"]
+
+header-includes:
+  - \usepackage{makecell}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \lhead{}
+  - \fancyhead[R]{}
+  - \fancyhead[C]{Polkadot Staking Outlook (DRAFT, Internal) -- \today}
+  - \fancyfoot[L]{\begin{minipage}[c]{6cm}Created by Filippo Franchini \\ Senior Technical Advisor \\ filippoweb3 on X/LinkedIn\end{minipage}}
+  - \fancyfoot[R]{\begin{minipage}[c]{2cm}\end{minipage}}
+  - \pagenumbering{gobble}
+  - \pagestyle{fancy}
+  - \setlength{\footskip}{35pt}
+
+vignette: >
+  %\VignetteIndexEntry{report}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+font_size: 11pt
+geometry: left=1cm,right=1cm,top=2cm,bottom=3cm
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.pos = "h", 
+  out.extra = "",
+  dpi = 300
+)
+```
+
+```{r setup, include = FALSE}
+library(knitr)
+library(dplyr)
+library(FutureOfStaking)
+library(kableExtra)
+
+devtools::load_all()
+```
+
+\pagenumbering{arabic}
+
+# Introduction
+
+This report explores how the Institution can maximize income from staking activities in line with the [**DAP and Future of Stake roadmap**](https://forum.polkadot.network/t/the-roadmap-for-the-dynamic-allocation-pool-dap/16511). The roadmap will be divided into different phases:
+
+- **Phase 1: Will be enacted just before the 14th of March 2026.** Key changes to staking include a minimum self-stake of 10,000 DOT for validators and a minimum commission of 10%. Nominators will incur no slashing and can unbond as soon as their stake is no longer backing any validator (1-2 days).
+- **Phase 2: Will be enacted at some point after the 14th of March 2026.** The changes included in Phase II are proposed [**here**](https://forum.polkadot.network/t/proposal-dynamic-allocation-pool-dap/15878). Phase II will allocate the newly minted tokens, departing from the old 15/85 treasury/stakers split.
+
+This report explores the impact of changes to the staking system during Phases I and II and is intended to guide internal decision-making. The functions and methodologies used to simulate all scenarios are available in a private R package, accessible on request.
+
+# Phase I
+
+## Protocol Issuance Allocation under Phase I
+
+The table below shows the protocol allocation in DOT balance for the annual issuance (calendar year) before and after Phase I: 15% to the treasury and 85% to stakers. For 2026, it assumes an issuance of 120M DOT per year until the 14th of March (excluded), when the new issuance schedule model kicks in (see merged [**pull request**](https://github.com/polkadot-fellows/runtimes/pull/898/changes#:~:text=const%20HARD_CAP_START%3A%20BlockNumber%20%3D%2030_349_908%3B) into Polkadot runtime 2.0.5).
+
+```{r, echo=F}
+issuance <- get_issuance(current_supply = global_variables$supply,
+                         current_issuance = global_variables$current_issuance,
+                         save = FALSE,
+                         token_price = global_variables$price,
+                         today = Sys.Date(),
+                         end_date = "2035-12-31", 
+                         nodes = global_variables$nodes,
+                         phase2.opt = list(
+                            phase2_start = "2226-03-14",
+                            node_reward = global_variables$node_reward, 
+                            overcollateral_factor = global_variables$overcoll,
+                            to_resilience = global_variables$non_reserve_to_resilience,
+                            to_treasury = global_variables$non_reserve_to_tresury
+                         ))
+
+issuance.data <- group_by(issuance, year) %>%
+  summarize(issuance = sum(issuance),
+            supply = max(supply),
+            reserve = sum(reserve),
+            non_reserve = sum(non_reserve),
+            to_treasury = sum(to_treasury),
+            to_ops = sum(operations),
+            to_resilience = sum(to_resilience),
+            to_stakers = sum(to_stakers)) %>%
+  select(-c(reserve,non_reserve, to_ops, to_resilience))
+issuance.data <- issuance.data[c(1:4),]
+colnames(issuance.data) <- c("Year", "Annual Issuance", "EoY Supply", "To Treasury", "To Stakers")
+
+kbl(issuance.data, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = "DOT issuance allocation assuming only Phase I. Summary statistics for the current year are calculated from the date of generation of this report.") %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+\newpage
+
+## Income from Staking under Phase I
+
+The tables below show the income from staking under the following scenarios:
+
+- Staking rates: ``r round(global_variables$staking_rate*100, 2)``% (current), 45% and 30%
+- DOT prices: USD ``r round(global_variables$price, 2)`` (current) and 3 USD.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                       year = 2026,
+                       staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                       token_price = c(global_variables$price, 3),
+                       budget = global_variables$budget, 
+                       nodes = global_variables$nodes, 
+                       stock_info = list(held = global_variables$stock, 
+                                         bonded_pct = global_variables$bonded_pct))
+
+summary <- summary[,-c(1:4,7,14)]
+colnames(summary) <- c("Staking Rate (%)", "Total Bonded (DOT)", "Min. Total Node Stake (DOT)", "Max. Active Nodes", "Tot. Income (DOT)", "APY", "DOT Price (USD)", "Tot. Income (USD)", "From Stock (DOT)", "From Stock (%)")
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = "2026 Income from staking, assuming only Phase I. Summary statistics for the current year are calculated from the date of generation of this report.") %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                       year = 2027,
+                       staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                       token_price = c(global_variables$price, 3),
+                       budget = global_variables$budget, 
+                       nodes = global_variables$nodes, 
+                       stock_info = list(held = global_variables$stock, 
+                                         bonded_pct = global_variables$bonded_pct))
+
+summary <- summary[,-c(1:4,7,14)]
+colnames(summary) <- c("Staking Rate (%)", "Total Bonded (DOT)", "Min. Total Node Stake (DOT)", "Max. Active Nodes", "Tot. Income (DOT)", "APY", "DOT Price (USD)", "Tot. Income (USD)", "From Stock (DOT)", "From Stock (%)")
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = "2027 Income from staking, assuming only Phase I.") %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+### Phase I Assumptions {#assumptions}
+
+The results are calculated based on the following assumptions:
+
+- The `Min. Total Node Stake` is the minimum stake to send a node into the active set, and it is calculated as 85% of the average stake per node (`Total Bonded / nodes in active set`). This is based on actual observations on [**Polkadot-JS**](https://polkadot.js.org/apps/#/staking-async/all-validators).
+- The `Max. Active Nodes` represents the maximum number of nodes the Institution can send to the active set with its own stake.
+- With the start of Phase I, after the 14th of March 2026:
+  - the Institution will not get staking rewards on the minimum self-stake of 10000 DOT placed for `Max. Active Nodes`.
+  - the Institution will get only 90% of the rewards for `Max. Active Nodes` (10% minimum commission).
+  
+  These two assumptions hold until Phase II starts. That is, if Phase II is delayed (i.e., begins after the 14th of March 2026), within the gap period, the Institution will lose staking rewards on the minimum self-stake (10000 DOT) and the minimum node commission (10%).
+  
+- The Institution holds a stock of ``r format(round(global_variables$stock, 2), scientific = F)`` DOT, of which ``r format(round(global_variables$bonded_pct*100, 2), scientific = F)``% is bonded in staking. It is assumed that these numbers are kept constant throughout the years and in subsequent simulations.
+- The annual requested budget is USD ``r format(round(global_variables$budget, 2), scientific = F)``, kept as constant throughout the years and following simulations.
+
+\newpage
+
+# Phase II (Start: `r global_variables$p2_start`) {#phase2}
+
+The table below shows the protocol allocation in DOT balance for the annual issuance (calendar year) during Phases I and II, assuming Phase II starts on `r global_variables$p2_start`.
+
+```{r, echo=F}
+issuance <- get_issuance(current_supply = global_variables$supply,
+                         current_issuance = global_variables$current_issuance,
+                         save = FALSE,
+                         token_price = global_variables$price,
+                         today = Sys.Date(),
+                         end_date = "2035-12-31",
+                         nodes = global_variables$nodes,
+                         phase2.opt = list(
+                            phase2_start = global_variables$p2_start,
+                            node_reward = global_variables$node_reward, 
+                            overcollateral_factor = global_variables$overcoll,
+                            to_resilience = global_variables$non_reserve_to_resilience,
+                            to_treasury = global_variables$non_reserve_to_tresury
+                         ))
+
+issuance.data <- group_by(issuance, year) %>%
+  summarize(issuance = sum(issuance),
+            supply = max(supply),
+            reserve = sum(reserve),
+            non_reserve = sum(non_reserve),
+            to_treasury = sum(to_treasury),
+            to_ops = sum(operations),
+            to_resilience = sum(to_resilience),
+            to_stakers = sum(to_stakers))
+issuance.data <- issuance.data[c(1:4),]
+colnames(issuance.data) <- c("Year", "Annual Issuance", "EoY Supply", "Reserve", "Non-Reserve", "To Treasury", "To Ops", "To Resilience", "To Stakers")
+
+caption_text <- paste0(
+  "DOT issuance allocation assuming Phase I (start on 14th March 2026) ",
+  "and II (start on ", global_variables$p2_start,"). Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(issuance.data, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+- The `non-reserve` is calculated using the equation provided [**here**](https://forum.polkadot.network/t/proposal-dynamic-allocation-pool-dap/15878#:~:text=be%20calculated%20by-,C_t%20%3D%20C_0%20*%200.91%5Et,-.)
+- The `reserve` is the `annual issuance - non-reserve`
+- The `treasury` is a proportion of the `non-reserve` (~ ``r round(global_variables$non_reserve_to_tresury*100, 2)``%), and for 2026 is equivalent to what the treasury would get without Phase II (i.e., 15% of 55M DOT, approximately 8.25M DOT)
+- The `ops` budget is calculated assuming the following:
+
+  - ``r round(global_variables$node_reward, 2)`` USD/month per node, see [**here**](https://forum.polkadot.network/t/proposal-dynamic-allocation-pool-dap/15878#:~:text=fixed%20payment%20of-,%242000%20per%20node,-.%20As%20the%20stablecoin)
+  - a ``r round(global_variables$overcoll, 2)`` over-collateralization factor for minting a DOT native stablecoin (if set to 1 it means no over-collateralization)
+- The `resilience` budget is a proportion of the `non-reserve` (~ ``r round(global_variables$non_reserve_to_resilience*100, 2)``%), allowing 5.4 M DOT allocated in the first (non-calendar) year, as specified [**here**](https://forum.polkadot.network/t/proposal-dynamic-allocation-pool-dap/15878#:~:text=Economic%20resilience%20budget%3A-,5%E2%80%99400%E2%80%99000%20DOT,-Operational%20costs%20budget).
+- The budget allocation for `stakers` is calculated by subtracting from the non-reserve the budget for resilience, operations, and treasury.
+
+In general, delaying Phase II results in more DOT from the issuance being allocated to nominators, with a consequent higher APY. Except for treasury, the budgets for resilience, operations, and reserve are reduced in 2026 as Phase II starts toward the EoY.
+
+Because the annual allocation is now split into multiple "buckets" (i.e., staking, resilience, operations), to maximise income, an entity needs to participate in all activities that are rewarded from those buckets. Because staking will still be the same for all network participants, the following subsections explore how the income changes based on resilience and operations, specifically by varying:
+
+- own self stake
+- self stake distribution
+- participation in operations by running own nodes
+
+\newpage
+
+## 0 DOT for resilience, 0% operations
+
+This is a scenario assuming no participation in self-stake or operations, receiving only rewards from staking as a nominator. This is most likely reflecting the passive income of most network participants who will nominate.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(30000, global_variables$nodes),
+                              self_stake = 0,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and no participation in operations and resilience. Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(30000, global_variables$nodes),
+                              self_stake = 0,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and no participation in operations and resilience."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For assumptions see Section \ref{assumptions}.
+
+### Observations
+
+Note that the APY for nominators decreases in 2027 because we are in full Phase II. Important to point out that the issuance reduction model the community voted on was developed with a [**competitive staking rate**](https://polkadot.subsquare.io/referenda/1710#:~:text=offers%20a%20staking%20rate) of ~5%, still higher than other major Proof-of-Stake blockchains like Ethereum and Solana.
+
+\newpage
+
+## 100,000 DOT for resilience (all nodes @10,000 DOT), 0% operations
+
+This is a scenario assuming participation in resilience, receiving rewards from staking as a nominator, and providing self-stakes (100000 DOT per nominated active node, assuming all self-stakes are set to 10000 DOT). The self-stake will get staking rewards for nominations and vested DOT rewards for resilience. Under the current circumstances, the Institution will need approximately 1.2M DOT to send a node in the active set. To maximize rewards, we assume here that 100000 DOT of the 1.2M DOT will be put into self-staking.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(10000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake. Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(10000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For previously held assumptions, see Section \ref{assumptions}. Additional assumptions include:
+
+- all self stakes at 10000 DOT, except for the Institution having 100000 DOT on all `Max Active Nodes`
+
+\newpage
+
+## 100,000 DOT for resilience (all nodes @30,000 DOT), 0% operations
+
+This is a scenario assuming participation in resilience, receiving rewards from staking as a nominator, and providing self-stakes (100000 DOT per nominated active node, assuming all self-stakes are set to 30000 DOT). The self-stake will get staking rewards for nominations and vested DOT rewards for resilience. Under the current circumstances, the Institution will need approximately 1.2M DOT to send a node in the active set. To maximize rewards, we assume here that 100000 DOT of the 1.2M DOT will be put into self-staking.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(30000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (25$\\%$ of the nodes sent into the active set with own bonded stake). Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(30000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (25$\\%$ of the nodes sent into the active set with own bonded stake)."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For previously held assumptions, see Section \ref{assumptions}. Additional assumptions include:
+
+- all self stakes at 30000 DOT, except for the Institution having 100000 DOT on all `Max Active Nodes`
+
+\newpage
+
+## 100,000 DOT for resilience (all nodes @100,000 DOT), 0% operations
+
+This is a scenario assuming participation in resilience, receiving rewards from staking as a nominator, and providing self-stakes (100000 DOT per nominated active node, assuming all self-stakes are set to 100000 DOT). The self-stake will get staking rewards for nominations and vested DOT rewards for resilience. Under the current circumstances, the Institution will need approximately 1.2M DOT to send a node in the active set. To maximize rewards, we assume here that 100000 DOT of the 1.2M DOT will be put into self-staking.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(100000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake). Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = rep(100000, global_variables$nodes),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake)."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For previously held assumptions, see Section \ref{assumptions}. Additional assumptions include:
+
+- all self stakes at 100000 DOT on all `Max Active Nodes`
+
+\newpage
+
+## 100,000 DOT for resilience (all nodes 20% at 10k, 50% at 30k and 30% at 100k), 0% operations
+
+This is a scenario assuming participation in resilience, allowing to get rewards from staking as a nominator and for providing self-stake (100000 DOT on each nominated active node, assuming all self-stakes are set to 20% at 10k, 50% at 30k and 30% at 100k). The self-stake will get staking rewards for nominations and vested DOT rewards for resilience. Under the current circumstances, the Institution will need approximately 1.2M DOT to send a node in the active set. To maximize rewards, we assume here that 100000 DOT of the 1.2M DOT will be put into self-staking.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = c(rep(10000, 0.2*global_variables$nodes), rep(30000, 0.5*global_variables$nodes), rep(100000, 0.3*global_variables$nodes)),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake). Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = c(rep(10000, 0.2*global_variables$nodes), rep(30000, 0.5*global_variables$nodes), rep(100000, 0.3*global_variables$nodes)),
+                              self_stake = 100000,
+                              pct_own_nodes = 0,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake)."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For previously held assumptions, see Section \ref{assumptions}. Additional assumptions include:
+
+- all self stakes with the following distribution:
+
+  - 20% at 10k, 50% at 30k, and 30% at 100k, 
+  and the Institution having 100000 DOT on all `Max Active Nodes`
+
+\newpage
+
+## 100,000 DOT for resilience (all nodes 20% at 10k, 50% at 30k and 30% at 100k), 60% operations
+
+This is a scenario assuming participation in resilience and operations, allowing to get rewards from staking as a nominator, for running own nodes (all nodes sent in the active set with own stake), and for providing self-stake (100000 DOT on each nominated active node, assuming all self-stakes are set to 20% at 10k, 50% at 30k and 30% at 100k). The self-stake will get staking rewards for nominations and vested DOT rewards for resilience. Under the current circumstances, the Institution will need approximately 1.2M DOT to send a node in the active set. To maximize rewards, we assume here that 100000 DOT of the 1.2M DOT will be put into self-staking.
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2026,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = c(rep(10000, 0.2*global_variables$nodes), rep(30000, 0.5*global_variables$nodes), rep(100000, 0.3*global_variables$nodes)),
+                              self_stake = 100000,
+                              pct_own_nodes = 0.6,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2026 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake). Summary statistics for the current year are calculated from the date of generation of this report."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+```{r, echo=F}
+summary <- get_summary(data = issuance,
+                            year = 2027,
+                            staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                            stock_info = list(held = global_variables$stock, 
+                                              bonded_pct = global_variables$bonded_pct),
+                            token_price = c(global_variables$price, 3),
+                            budget = global_variables$budget,
+                            nodes = global_variables$nodes,
+                            phase2.opt = list(
+                              self_stakes = c(rep(10000, 0.2*global_variables$nodes), rep(30000, 0.5*global_variables$nodes), rep(100000, 0.3*global_variables$nodes)),
+                              self_stake = 100000,
+                              pct_own_nodes = 0.6,
+                              node_cost = global_variables$node_cost,
+                              start_date = global_variables$p2_start,
+                              FTE = global_variables$FTE,
+                              node_reward = global_variables$node_reward,
+                              overcollateral_factor = global_variables$overcoll
+                            ))
+summary <- summary[,-c(1:7,13,18,19,25)]
+colnames(summary) <- c("DOT Price (USD)", "To Ops", "To Stakers", "Staking Rate ($\\%$)", "Total Bonded", "Min. Total Node Stake", "Max. Active Nodes", "Resilience", "Staking", "Ops", "Ops Costs", "Tot. Income", "APY ($\\%$)", "Tot. Income (USD)", "From Stock", "From Stock ($\\%$)")
+
+caption_text <- paste0(
+  "2027 Income, assuming Phase II starts on the ",
+  global_variables$p2_start, ", and participation in resilience with 100000 DOT self-stake, and operations (100$\\%$ of the nodes sent into the active set with own bonded stake)."
+)
+
+kbl(summary, format = "latex", align = "l", longtable = F, booktabs = T, format.args = list(big.mark = ","), caption = caption_text, escape = FALSE) %>%
+  collapse_rows(valign = "top") %>% kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 11)
+```
+
+For previously held assumptions, see Section \ref{assumptions}. Additional assumptions include:
+
+- all self stakes with the following distribution:
+
+  - 20% at 10k, 50% at 30k, and 30% at 100k, 
+  and the Institution having 100000 DOT on all `Max Active Nodes`
+  
+- 60% of `Max Active Nodes` are in-house
+- ``r round(global_variables$node_cost, 2)`` USD/month of running costs per node, and USD ``r format(round(global_variables$FTE, 2), scientific = F)``/year for 2x FTEs.
+
+\newpage
+
+## APY Analysis
+
+Below how the APY varies according to DOT price changes.
+
+```{r, echo=F, fig.width=7, fig.height=5}
+p <- seq(0.3, 10, 0.1)
+
+out <- list()
+
+for (i in 1:length(p)){
+  
+  summary_data <- list()
+  
+  for (j in 1:3) {
+    
+    ss <- switch(j, 0, 100000, 100000)
+    pct_nodes <- switch(j, 0, 0, 0.6)
+    
+    
+    summary_data[[j]] <- get_summary(data = issuance,
+                                year = 2027,
+                                staking_rate = c(global_variables$staking_rate, 0.45, 0.3),
+                                stock_info = list(held = global_variables$stock, bonded_pct = global_variables$bonded_pct),
+                                token_price = c(p[i]),
+                                budget = global_variables$budget,
+                                nodes = global_variables$nodes,
+                                phase2.opt = list(
+                                  self_stakes = c(rep(10000, 0.2*global_variables$nodes), rep(30000, 0.5*global_variables$nodes), rep(100000, 0.3*global_variables$nodes)),
+                                  self_stake = ss,
+                                  pct_own_nodes = pct_nodes,
+                                  node_cost = global_variables$node_cost,
+                                  start_date = global_variables$p2_start,
+                                  FTE = global_variables$FTE,
+                                  node_reward = global_variables$node_reward,
+                                  overcollateral_factor = global_variables$overcoll
+                                  )
+                                )
+    }
+  
+  out[[i]] <- summary_data
+  
+}
+
+apys <- as.data.frame(do.call(rbind, lapply(out, FUN = function(x) x[[1]]$apy)))
+
+plot(p, apys[,3], type = "l", ylab = "APY (%)", xlab = "DOT price (USD)", main = "", ylim = c(0, 5))
+lines(p, apys[,2], lty = 2)
+lines(p, apys[,1], lty = 3)
+legend("topleft", bty = "n" , lty = c(1, 2, 3), c("100k DOT self + 60% ops", "100k DOT self", "No self, no ops"))
+```
+
+\newpage
+
+# Conclusions and Suggestions
+
+In general, to maximize income under Phase II assumptions:
+
+- An entity must participate in both resilience and operations; otherwise, the issuance allocation for those activities won't be accessible
+- An entity maxes out the self-stake on all nominated active nodes while most of the other active nodes remain toward the minimum self-stake. The self-stake earns both staking rewards and resilience rewards. It is advised to max out the self-stake and add the minimum remaining as nominations (the minimum stake to get a node into the active set is required anyway; better use part of it as a self-stake to get a substantial boost in vested rewards).
+
+Specific to the Web3 Foundation, the maximum APY under Phase II is achieved with 100000 DOT in self-stake across all nominated nodes sent to the active set, assuming all nominated nodes are run in-house.
+
+## Low APY for Stakers under Phase II
+
+The low APY for nominators under Phase II is a concern, as the Wish for Change referendum proposing the new issuance curve considered a competitive APY compared to Ethereum and Solana. Under these circumstances, allocations for reserve and treasury could be adjusted. Currently, the issuance allocation to stakers is whatever remains after all other allocations are accounted for. A solution could be to ensure stakers receive a competitive APY, then allocate the remaining funds from the issuance to the reserve and treasury.
+
+## High Budget for Operations under Phase II
+
+Operations are paid with a native stablecoin (potentially pUSD). With the current DOT price, much of the issuance must be diverted to mint pUSD and the necessary over-collateralization. Another potential option could be simply converting DOT into widely accepted stablecoins like USDC.
+
+
+
