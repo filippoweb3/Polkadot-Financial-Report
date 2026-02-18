@@ -26,6 +26,6 @@ help("fetch_chain_data")
 
 ### Report generation
 
-To generate the report, select `FoS_report.Rmd` and Cmd + Opt + K to compile the PDF document.
+To generate the report, select the Future of Stake report (`FoS_report.Rmd`) and Cmd + Opt + K to compile the PDF document.
 
 Before generating the report, you can run the `global_variables.R` script to update the `global_variables` object.
