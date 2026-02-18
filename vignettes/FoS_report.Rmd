@@ -723,8 +723,6 @@ In general, to maximize income under Phase II assumptions:
 - An entity must participate in both resilience and operations; otherwise, the issuance allocation for those activities won't be accessible
 - An entity maxes out the self-stake on all nominated active nodes while most of the other active nodes remain toward the minimum self-stake. The self-stake earns both staking rewards and resilience rewards. It is advised to max out the self-stake and add the minimum remaining as nominations (the minimum stake to get a node into the active set is required anyway; better use part of it as a self-stake to get a substantial boost in vested rewards).
 
-Specific to the Web3 Foundation, the maximum APY under Phase II is achieved with 100000 DOT in self-stake across all nominated nodes sent to the active set, assuming all nominated nodes are run in-house.
-
 ## Low APY for Stakers under Phase II
 
 The low APY for nominators under Phase II is a concern, as the Wish for Change referendum proposing the new issuance curve considered a competitive APY compared to Ethereum and Solana. Under these circumstances, allocations for reserve and treasury could be adjusted. Currently, the issuance allocation to stakers is whatever remains after all other allocations are accounted for. A solution could be to ensure stakers receive a competitive APY, then allocate the remaining funds from the issuance to the reserve and treasury.
