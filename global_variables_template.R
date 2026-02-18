@@ -10,7 +10,7 @@ global_variables <- list(
   nodes = 600, # number of active nodes
   node_reward = 2000, # reward for running a node in USD/month
   node_cost = 950, # cost per node in USD/month
-  FTE = 2*200000, # annual cost for full time engineers, 2x, in USD
+  FTE = 2*100000, # annual cost for full time engineers, 2x, in USD
   overcoll = 1, # overcollateralization factor for minting DOT-native stablecoin pUSD
   p2_start = "2026-08-14", # start date of Phase 2, realistically P2 will start some time after the 14th of March,
   non_reserve_to_tresury = 0.207, # % of non-reserve issuance going to treasury, default: 0.207
